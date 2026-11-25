@@ -1,0 +1,1840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KeyLeak: Find Exposed API Keys in Your Website JavaScript</title>
+  <meta name="description" content="Scan JavaScript bundles, HTML, and .env files locally in your browser to find exposed API keys, tokens, and secrets before attackers do.">
+  <meta name="author" content="Shrijeet Singh">
+  <link rel="canonical" href="https://shrijeetdev.github.io/keyleak/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="KeyLeak: Find Exposed API Keys in Your Website JavaScript">
+  <meta property="og:description" content="Scan JavaScript bundles, HTML, and .env files locally in your browser to find exposed API keys, tokens, and secrets before attackers do.">
+  <meta property="og:url" content="https://shrijeetdev.github.io/keyleak/">
+  <meta property="og:site_name" content="KeyLeak">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="KeyLeak: Find Exposed API Keys in Your Website JavaScript">
+  <meta name="twitter:description" content="Scan JavaScript bundles, HTML, and .env files locally in your browser to find exposed API keys, tokens, and secrets before attackers do.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230D1117'/%3E%3Cpath d='M12 14a5 5 0 1 1 8.9 3.1L26 22.2V26h-3.8l-1.2-1.2v-2h-2v-2l-1.9-1.9A5 5 0 0 1 12 14zm3-1.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z' fill='%233FB950'/%3E%3Ccircle cx='24' cy='9' r='3' fill='%23F85149'/%3E%3C/svg%3E">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "KeyLeak",
+    "applicationCategory": "SecurityApplication",
+    "operatingSystem": "Web Browser",
+    "url": "https://shrijeetdev.github.io/keyleak/",
+    "codeRepository": "https://github.com/shrijeetdev/keyleak",
+    "description": "Client-side static secret scanner and bookmarklet that detects exposed API keys, tokens, and credentials in website JavaScript bundles.",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "author": {
+      "@type": "Person",
+      "name": "Shrijeet Singh",
+      "url": "https://github.com/shrijeetdev"
+    }
+  }
+  </script>
+  <style>
+    :root {
+      --bg: #0D1117;
+      --surface: #161B22;
+      --surface-elevated: #1C2128;
+      --border: #30363D;
+      --text: #E6EDF3;
+      --muted: #8B949E;
+      --accent: #3FB950;
+      --accent-soft: rgba(63, 185, 80, 0.14);
+      --accent2: #15E0ED;
+      --accent2-soft: rgba(21, 224, 237, 0.14);
+      --danger: #F85149;
+      --danger-soft: rgba(248, 81, 73, 0.15);
+      --warn: #D29922;
+      --warn-soft: rgba(210, 153, 34, 0.16);
+      --high: #F0883E;
+      --high-soft: rgba(240, 136, 62, 0.16);
+      --radius: 12px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #F6F8FA;
+        --surface: #FFFFFF;
+        --surface-elevated: #F0F3F6;
+        --border: #D0D7DE;
+        --text: #1F2328;
+        --muted: #59636E;
+        --accent: #1A7F37;
+        --accent-soft: rgba(26, 127, 55, 0.1);
+        --accent2: #0969DA;
+        --accent2-soft: rgba(9, 105, 218, 0.1);
+        --danger: #CF222E;
+        --danger-soft: rgba(207, 34, 46, 0.1);
+        --warn: #9A6700;
+        --warn-soft: rgba(154, 103, 0, 0.12);
+        --high: #BC4C00;
+        --high-soft: rgba(188, 76, 0, 0.12);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      color: var(--accent2);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--accent2);
+      outline-offset: 2px;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+
+    .brand-block {
+      max-width: 720px;
+    }
+
+    .title-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .logo-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.65rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid rgba(63, 185, 80, 0.35);
+    }
+
+    .pill-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .github-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+
+    .github-btn:hover {
+      border-color: var(--accent2);
+      text-decoration: none;
+      background: var(--surface-elevated);
+    }
+
+    /* Cards & Panels */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .panel-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 650;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    button, .btn-link {
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: var(--surface-elevated);
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.08s ease;
+    }
+
+    button:hover {
+      border-color: var(--muted);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #0D1117;
+    }
+
+    @media (prefers-color-scheme: light) {
+      button.primary {
+        color: #FFFFFF;
+      }
+    }
+
+    button.primary:hover {
+      filter: brightness(1.07);
+    }
+
+    button.ghost {
+      background: transparent;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .dropzone {
+      position: relative;
+      border: 1.5px dashed var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      transition: border-color 0.15s ease, background-color 0.15s ease;
+    }
+
+    .dropzone.dragover {
+      border-color: var(--accent2);
+      background: var(--accent2-soft);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 220px;
+      padding: 14px;
+      border: none;
+      border-radius: var(--radius);
+      background: transparent;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.84rem;
+      line-height: 1.5;
+      resize: vertical;
+      display: block;
+    }
+
+    textarea:focus {
+      outline: none;
+    }
+
+    .dropzone:focus-within {
+      border-color: var(--accent2);
+    }
+
+    .drop-footer {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .file-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .file-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+    }
+
+    /* Bookmarklet Box */
+    .bookmarklet-card {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 18px;
+      background: linear-gradient(135deg, var(--surface) 0%, var(--surface-elevated) 100%);
+    }
+
+    @media (max-width: 720px) {
+      .bookmarklet-card {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .bookmarklet-desc h2 {
+      margin: 0 0 6px;
+      font-size: 1.05rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .bookmarklet-desc p {
+      margin: 0;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .bookmarklet-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .bookmarklet-drag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-radius: var(--radius);
+      background: var(--accent2-soft);
+      border: 1.5px dashed var(--accent2);
+      color: var(--accent2);
+      font-weight: 700;
+      font-size: 0.9rem;
+      cursor: grab;
+      user-select: none;
+      text-decoration: none;
+    }
+
+    .bookmarklet-drag:hover {
+      text-decoration: none;
+      background: rgba(21, 224, 237, 0.22);
+    }
+
+    .bookmarklet-drag:active {
+      cursor: grabbing;
+    }
+
+    /* Results Section */
+    .summary-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 16px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .filter-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .filter-btn {
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .filter-btn.active {
+      color: var(--text);
+      border-color: var(--accent2);
+      background: var(--accent2-soft);
+    }
+
+    .count-badge {
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 36px 16px;
+      color: var(--muted);
+    }
+
+    .empty-state strong {
+      display: block;
+      color: var(--text);
+      font-size: 1rem;
+      margin-bottom: 4px;
+    }
+
+    .findings-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .finding-item {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      padding: 14px 16px;
+      border-left-width: 4px;
+    }
+
+    .finding-item.sev-CRITICAL { border-left-color: var(--danger); }
+    .finding-item.sev-HIGH { border-left-color: var(--high); }
+    .finding-item.sev-MEDIUM { border-left-color: var(--warn); }
+    .finding-item.sev-INFO { border-left-color: var(--accent2); }
+
+    .finding-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .finding-title-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sev-tag {
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.03em;
+    }
+
+    .sev-CRITICAL .sev-tag { background: var(--danger-soft); color: var(--danger); }
+    .sev-HIGH .sev-tag { background: var(--high-soft); color: var(--high); }
+    .sev-MEDIUM .sev-tag { background: var(--warn-soft); color: var(--warn); }
+    .sev-INFO .sev-tag { background: var(--accent2-soft); color: var(--accent2); }
+
+    .finding-type {
+      font-weight: 700;
+      font-size: 0.98rem;
+    }
+
+    .finding-loc {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .masked-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .masked-code {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      padding: 5px 10px;
+      border-radius: 7px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      word-break: break-all;
+    }
+
+    .meta-tag {
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--muted);
+      background: var(--surface);
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    .finding-fix {
+      font-size: 0.88rem;
+      color: var(--text);
+      background: var(--surface);
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .finding-fix strong {
+      color: var(--accent);
+    }
+
+    /* How it works & FAQ */
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    @media (max-width: 760px) {
+      .grid-3 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .step-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+
+    .step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 0.82rem;
+      margin-bottom: 10px;
+    }
+
+    .step-card h3 {
+      margin: 0 0 6px;
+      font-size: 0.98rem;
+    }
+
+    .step-card p {
+      margin: 0;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+
+    .faq-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    details {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      padding: 14px 16px;
+    }
+
+    summary {
+      font-weight: 650;
+      font-size: 0.96rem;
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    summary::-webkit-details-marker {
+      display: none;
+    }
+
+    summary::after {
+      content: "+";
+      font-family: var(--font-mono);
+      font-size: 1.1rem;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    details[open] summary::after {
+      content: "−";
+    }
+
+    details p {
+      margin: 10px 0 0;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    footer {
+      margin-top: 32px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--surface-elevated);
+      color: var(--text);
+      border: 1px solid var(--accent);
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      z-index: 100;
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        transition: none !important;
+        animation: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand-block">
+        <div class="title-row">
+          <span class="logo-mark" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="8" cy="15" r="4"></circle>
+              <path d="M10.85 12.15L19 4"></path>
+              <path d="M18 5l2 2"></path>
+              <path d="M15 8l2 2"></path>
+            </svg>
+          </span>
+          <h1>KeyLeak</h1>
+          <span class="pill"><span class="pill-dot" aria-hidden="true"></span>Runs 100% in your browser</span>
+        </div>
+        <p class="subtitle">Find exposed API keys, tokens, and database credentials in your website's JavaScript bundles before attackers do.</p>
+      </div>
+      <a class="github-btn" href="https://github.com/shrijeetdev/keyleak" target="_blank" rel="noopener noreferrer" aria-label="Star KeyLeak on GitHub">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+        </svg>
+        Star on GitHub
+      </a>
+    </header>
+
+    <main>
+      <!-- Scan Code Panel -->
+      <section class="card" aria-labelledby="scan-heading">
+        <div class="panel-header">
+          <h2 id="scan-heading" class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="16 18 22 12 16 6"></polyline>
+              <polyline points="8 6 2 12 8 18"></polyline>
+            </svg>
+            Scan code
+          </h2>
+          <div class="toolbar">
+            <button type="button" id="btn-sample" aria-label="Load realistic sample leaked code">Try a sample</button>
+            <button type="button" id="btn-upload" aria-label="Upload local JavaScript, HTML, source map, or env files">Upload files</button>
+            <input type="file" id="file-input" class="sr-only" multiple accept=".js,.mjs,.cjs,.map,.html,.htm,.env,.json,.txt,.ts,.tsx,.jsx">
+            <button type="button" id="btn-clear" class="ghost" aria-label="Clear pasted code and results">Clear</button>
+            <button type="button" id="btn-scan" class="primary" aria-label="Scan code for exposed secrets">Scan now</button>
+          </div>
+        </div>
+
+        <div class="dropzone" id="dropzone">
+          <label for="code-input" class="sr-only">Paste JavaScript, HTML, .env, or bundle text to scan</label>
+          <textarea id="code-input" spellcheck="false" placeholder="Paste bundled JavaScript, HTML source, .env contents, or drop .js / .map / .html / .env / .json files here..."></textarea>
+          <div class="drop-footer">
+            <div id="file-status" class="file-chips">
+              <span>Supports drag &amp; drop of .js, .map, .html, .env, .json files (read locally via FileReader)</span>
+            </div>
+            <span id="char-count">0 chars</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bookmarklet Panel -->
+      <section class="card bookmarklet-card" aria-labelledby="bookmarklet-heading">
+        <div class="bookmarklet-desc">
+          <h2 id="bookmarklet-heading">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+            </svg>
+            Live Site Scanner Bookmarklet
+          </h2>
+          <p>Drag the button to your bookmarks bar. Open <strong>your own website</strong>, click the bookmarklet, and it will fetch same-origin scripts and render an isolated Shadow DOM audit report directly on the page.</p>
+        </div>
+        <div class="bookmarklet-actions">
+          <a id="bookmarklet-link" class="bookmarklet-drag" href="#" draggable="true" title="Drag this button to your bookmarks bar" aria-label="Drag KeyLeak Live Scan bookmarklet to your bookmarks bar">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            KeyLeak Live Scan
+          </a>
+          <button type="button" id="btn-copy-bm" aria-label="Copy bookmarklet JavaScript URI to clipboard">Copy code</button>
+        </div>
+      </section>
+
+      <!-- Findings Panel -->
+      <section class="card" aria-labelledby="results-heading" aria-live="polite">
+        <div class="panel-header">
+          <h2 id="results-heading" class="panel-title">Findings</h2>
+          <div class="toolbar">
+            <button type="button" id="btn-export-json" disabled aria-label="Export masked findings as JSON">Export JSON</button>
+            <button type="button" id="btn-export-md" disabled aria-label="Export masked findings as Markdown">Export Markdown</button>
+          </div>
+        </div>
+
+        <div class="summary-bar">
+          <div class="filter-pills" role="group" aria-label="Filter findings by severity">
+            <button type="button" class="filter-btn active" data-filter="ALL">All <span class="count-badge" id="cnt-ALL">0</span></button>
+            <button type="button" class="filter-btn" data-filter="CRITICAL">Critical <span class="count-badge" id="cnt-CRITICAL">0</span></button>
+            <button type="button" class="filter-btn" data-filter="HIGH">High <span class="count-badge" id="cnt-HIGH">0</span></button>
+            <button type="button" class="filter-btn" data-filter="MEDIUM">Medium <span class="count-badge" id="cnt-MEDIUM">0</span></button>
+            <button type="button" class="filter-btn" data-filter="INFO">Info <span class="count-badge" id="cnt-INFO">0</span></button>
+          </div>
+          <span id="scan-meta" class="finding-loc">Ready to scan</span>
+        </div>
+
+        <div id="findings-container">
+          <div class="empty-state">
+            <strong>No scan run yet</strong>
+            Paste code above, drop build files, or click "Try a sample" to test 24+ secret detectors.
+          </div>
+        </div>
+      </section>
+
+      <!-- How It Works -->
+      <section class="card" aria-labelledby="how-heading">
+        <div class="panel-header">
+          <h2 id="how-heading" class="panel-title">How it works</h2>
+        </div>
+        <div class="grid-3">
+          <div class="step-card">
+            <span class="step-num">01</span>
+            <h3>Pattern + Entropy Verification</h3>
+            <p>Combines vendor-specific token prefixes and lengths with Shannon entropy checks and JWT payload decoding to separate real secrets from random bundle hashes.</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">02</span>
+            <h3>Context-Aware Severity</h3>
+            <p>Distinguishes public-by-design keys (like Stripe <code>pk_live</code> or Supabase <code>anon</code>) from privileged backend credentials (<code>sk_live</code> or <code>service_role</code>).</p>
+          </div>
+          <div class="step-card">
+            <span class="step-num">03</span>
+            <h3>Zero-Upload Architecture</h3>
+            <p>All parsing, file reading, and bookmarklet scanning happens strictly inside your browser tab. Secrets are immediately masked in reports so exports stay safe to share.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- FAQ -->
+      <section class="card" aria-labelledby="faq-heading">
+        <div class="panel-header">
+          <h2 id="faq-heading" class="panel-title">Frequently asked questions</h2>
+        </div>
+        <div class="faq-list">
+          <details>
+            <summary>Why do API keys leak in frontend code?</summary>
+            <p>Modern bundlers (Vite, Next.js, Webpack) inline environment variables prefixed with <code>VITE_</code> or <code>NEXT_PUBLIC_</code> directly into compiled JavaScript chunks. Fast-shipped and AI-generated apps often accidentally prefix private backend secrets or hardcode client SDK credentials directly in browser components.</p>
+          </details>
+          <details>
+            <summary>Which keys are safe to be public?</summary>
+            <p>Publishable identifiers designed for client SDKs—such as Stripe <code>pk_live_</code> keys, Firebase web config keys, Google Maps/Places browser keys, and Supabase <code>anon</code> keys—are meant to ship in frontend code. However, they still require domain/HTTP referrer restrictions and strict Row-Level Security (RLS) policies on the backend.</p>
+          </details>
+          <details>
+            <summary>What should I do if I find a leaked secret?</summary>
+            <p>Treat any secret exposed in a public bundle or git history as compromised. Immediately revoke and rotate the credential in the provider's dashboard, move the new secret to a server-only environment variable, proxy sensitive API calls through your own backend endpoint, and audit provider logs for unauthorized usage.</p>
+          </details>
+          <details>
+            <summary>Is my code or secret data sent anywhere?</summary>
+            <p>No. KeyLeak makes zero external network requests. Uploaded files are read locally via the browser FileReader API, and the bookmarklet only fetches scripts from the same origin you are actively inspecting.</p>
+          </details>
+          <details>
+            <summary>Ethical use: what sites may I scan?</summary>
+            <p>Scan only websites, repositories, and build artifacts that you own or have explicit written authorization to test. KeyLeak is built as a defensive pre-flight and self-audit utility for developers and security teams.</p>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Built by Shrijeet Singh (github.com/shrijeetdev) &middot;
+      <a href="https://github.com/shrijeetdev/keyleak" target="_blank" rel="noopener noreferrer">Star on GitHub</a> &middot;
+      More free tools (https://shrijeetdev.github.io/)
+    </footer>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      /* =========================================================================
+       * CORE DETECTOR ENGINE (Self-contained so it can be serialized into the
+       * bookmarklet without external dependencies)
+       * ========================================================================= */
+      function createScannerEngine() {
+        function shannonEntropy(str) {
+          if (!str || str.length === 0) return 0;
+          var freq = Object.create(null);
+          for (var i = 0; i < str.length; i++) {
+            var ch = str[i];
+            freq[ch] = (freq[ch] || 0) + 1;
+          }
+          var entropy = 0;
+          var len = str.length;
+          for (var k in freq) {
+            var p = freq[k] / len;
+            entropy -= p * Math.log2(p);
+          }
+          return entropy;
+        }
+
+        function maskSecret(val) {
+          if (!val) return "";
+          var clean = String(val).replace(/\s+/g, " ").trim();
+          if (clean.length <= 10) {
+            return clean.slice(0, 2) + "***" + clean.slice(-2);
+          }
+          return clean.slice(0, 6) + "..." + clean.slice(-4);
+        }
+
+        function decodeJwtPayload(token) {
+          try {
+            var parts = token.split(".");
+            if (parts.length !== 3) return null;
+            var b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+            while (b64.length % 4 !== 0) b64 += "=";
+            var jsonStr = atob(b64);
+            return JSON.parse(jsonStr);
+          } catch (e) {
+            return null;
+          }
+        }
+
+        function isPlaceholder(val) {
+          var lower = val.toLowerCase();
+          return (
+            lower.indexOf("example") !== -1 ||
+            lower.indexOf("placeholder") !== -1 ||
+            lower.indexOf("your_") !== -1 ||
+            lower.indexOf("changeme") !== -1 ||
+            lower.indexOf("xxxxxxx") !== -1 ||
+            /^([a-z0-9])\1{8,}$/i.test(val)
+          );
+        }
+
+        var RULES = [
+          {
+            id: "aws-access-key",
+            name: "AWS Access Key ID",
+            severity: "HIGH",
+            regex: /\b((?:AKIA|ASIA|AROA|AIDA)[0-9A-Z]{16})\b/g,
+            validate: function (m) {
+              return m.length === 20 && !isPlaceholder(m);
+            },
+            fix: "Revoke this IAM access key in AWS IAM immediately, audit CloudTrail for unauthorized calls, and use short-lived IAM roles or backend STS credentials instead."
+          },
+          {
+            id: "aws-secret-key",
+            name: "AWS Secret Access Key",
+            severity: "CRITICAL",
+            regex: /(?:aws[_-]?secret[_-]?(?:access[_-]?)?key|AWS_SECRET_ACCESS_KEY)\s*[:=]\s*["'`]([A-Za-z0-9/+=]{40})["'`]/gi,
+            group: 1,
+            validate: function (m) {
+              return m.length === 40 && shannonEntropy(m) >= 4.2 && !isPlaceholder(m);
+            },
+            fix: "Rotate the AWS IAM secret key immediately in the AWS Console and move all AWS SDK calls to a server-side runtime."
+          },
+          {
+            id: "github-token",
+            name: "GitHub Personal Access / OAuth Token",
+            severity: "CRITICAL",
+            regex: /\b((?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{82})\b/g,
+            validate: function (m) {
+              return shannonEntropy(m) >= 3.8 && !isPlaceholder(m);
+            },
+            fix: "Revoke the token immediately under GitHub Settings > Developer settings > Personal access tokens and issue a fine-grained token stored only in server secrets."
+          },
+          {
+            id: "gitlab-pat",
+            name: "GitLab Personal Access Token",
+            severity: "CRITICAL",
+            regex: /\b(glpat-[A-Za-z0-9\-_]{20,})\b/g,
+            validate: function (m) {
+              return m.length >= 26 && shannonEntropy(m.slice(6)) >= 3.5;
+            },
+            fix: "Revoke the PAT in GitLab User Settings > Access Tokens immediately and move GitLab API requests to a backend proxy."
+          },
+          {
+            id: "slack-token",
+            name: "Slack Bot / User / App Token",
+            severity: "CRITICAL",
+            regex: /\b(xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,32})\b/g,
+            validate: function (m) {
+              return shannonEntropy(m) >= 3.6;
+            },
+            fix: "Revoke the token in your Slack App OAuth & Permissions dashboard immediately and route Slack Web API calls through your backend."
+          },
+          {
+            id: "slack-webhook",
+            name: "Slack Incoming Webhook URL",
+            severity: "HIGH",
+            regex: /(https:\/\/hooks\.slack\.com\/services\/T[A-Z0-9]{8,}\/B[A-Z0-9]{8,}\/[A-Za-z0-9]{24,})/g,
+            validate: function (m) {
+              return m.length >= 65;
+            },
+            fix: "Regenerate the webhook URL in Slack App Incoming Webhooks and post notifications from a backend service rather than client JavaScript."
+          },
+          {
+            id: "stripe-secret",
+            name: "Stripe Secret / Restricted Live Key",
+            severity: "CRITICAL",
+            regex: /\b((?:sk|rk)_live_[0-9a-zA-Z]{24,})\b/g,
+            validate: function (m) {
+              return m.length >= 32 && shannonEntropy(m.slice(8)) >= 3.7 && !isPlaceholder(m);
+            },
+            fix: "Roll the secret or restricted key immediately in the Stripe Dashboard (Developers > API keys) and keep it strictly on your server."
+          },
+          {
+            id: "stripe-publishable",
+            name: "Stripe Live Publishable Key",
+            severity: "INFO",
+            regex: /\b(pk_live_[0-9a-zA-Z]{24,})\b/g,
+            validate: function (m) {
+              return m.length >= 32 && !isPlaceholder(m);
+            },
+            fix: "Public by design for Stripe.js client elements. Confirm no sk_live_ or rk_live_ key is bundled alongside it and verify allowed domains in Stripe."
+          },
+          {
+            id: "openai-key",
+            name: "OpenAI API Key",
+            severity: "CRITICAL",
+            regex: /\b(sk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,})\b/g,
+            validate: function (m) {
+              if (m.indexOf("sk_live_") === 0 || m.indexOf("sk-ant-") === 0) return false;
+              return m.length >= 40 && shannonEntropy(m) >= 3.8 && !isPlaceholder(m);
+            },
+            fix: "Delete the key immediately in platform.openai.com/api-keys, check usage billing for spikes, and proxy completions through your backend API."
+          },
+          {
+            id: "anthropic-key",
+            name: "Anthropic Claude API Key",
+            severity: "CRITICAL",
+            regex: /\b(sk-ant-(?:api03|admin01)-[A-Za-z0-9_-]{80,})\b/g,
+            validate: function (m) {
+              return shannonEntropy(m) >= 4.0 && !isPlaceholder(m);
+            },
+            fix: "Revoke the key in the Anthropic Console immediately and call the Messages API exclusively from a backend server."
+          },
+          {
+            id: "google-api-key",
+            name: "Google Cloud / Maps / Firebase API Key",
+            severity: "INFO",
+            regex: /\b(AIza[0-9A-Za-z_-]{35})\b/g,
+            validate: function (m) {
+              return m.length === 39 && shannonEntropy(m.slice(4)) >= 3.5 && !isPlaceholder(m);
+            },
+            fix: "Often public by design in client apps, but must be locked down in Google Cloud Console > Credentials using HTTP referrer restrictions and strict API allowlists."
+          },
+          {
+            id: "firebase-config",
+            name: "Firebase Web SDK Configuration Object",
+            severity: "INFO",
+            regex: /\{\s*["']?apiKey["']?\s*:\s*["'](AIza[0-9A-Za-z_-]{35})["'][\s\S]{0,320}?["']?projectId["']?\s*:\s*["']([a-z0-9-]+)["']/g,
+            validate: function (m) {
+              return m.indexOf("projectId") !== -1;
+            },
+            fix: "Firebase client configs are public identifiers. Ensure Firestore, Realtime Database, and Storage Security Rules enforce authentication and authorization."
+          },
+          {
+            id: "jwt-token",
+            name: "JSON Web Token / Supabase Key",
+            severity: "MEDIUM",
+            regex: /\b(eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b/g,
+            validate: function (m) {
+              return decodeJwtPayload(m) !== null;
+            },
+            classify: function (m) {
+              var payload = decodeJwtPayload(m);
+              if (payload && payload.iss && String(payload.iss).indexOf("supabase") !== -1) {
+                if (payload.role === "service_role") {
+                  return {
+                    name: "Supabase Service Role Key (Bypasses RLS)",
+                    severity: "CRITICAL",
+                    detail: "JWT role=service_role",
+                    fix: "CRITICAL: Rotate your Supabase JWT secret/service_role key immediately in Project Settings > API. Never expose service_role in frontend code—it bypasses Row-Level Security."
+                  };
+                }
+                if (payload.role === "anon") {
+                  return {
+                    name: "Supabase Anon Public Key",
+                    severity: "INFO",
+                    detail: "JWT role=anon",
+                    fix: "Public by design for browser clients. Verify that Row-Level Security (RLS) is enabled on every public schema table in Supabase."
+                  };
+                }
+              }
+              var roleNote = payload && payload.role ? " (role=" + payload.role + ")" : "";
+              return {
+                name: "Hardcoded JSON Web Token (JWT)" + roleNote,
+                severity: "MEDIUM",
+                detail: payload && payload.iss ? "iss=" + payload.iss : "Decoded JWT payload",
+                fix: "Remove hardcoded bearer JWTs from frontend bundles. Issue short-lived tokens dynamically after user authentication."
+              };
+            },
+            fix: "Remove hardcoded JWTs from source bundles and issue per-session tokens dynamically from your auth server."
+          },
+          {
+            id: "twilio-key",
+            name: "Twilio Account SID / API Key SID",
+            severity: "HIGH",
+            regex: /\b((?:AC|SK)[0-9a-f]{32})\b/g,
+            validate: function (m) {
+              return m.length === 34 && shannonEntropy(m.slice(2)) >= 3.2;
+            },
+            fix: "Rotate the Twilio API Key in Twilio Console > Account > API keys & tokens and move SMS/Voice calls to a server endpoint."
+          },
+          {
+            id: "sendgrid-key",
+            name: "SendGrid API Key",
+            severity: "CRITICAL",
+            regex: /\b(SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43})\b/g,
+            validate: function (m) {
+              return m.length === 69 && shannonEntropy(m) >= 4.0;
+            },
+            fix: "Delete the compromised key in SendGrid Settings > API Keys immediately and send transactional email strictly from your backend."
+          },
+          {
+            id: "mailgun-key",
+            name: "Mailgun Private API Key",
+            severity: "CRITICAL",
+            regex: /\b(key-[0-9a-f]{32})\b/g,
+            validate: function (m) {
+              return m.length === 36 && shannonEntropy(m.slice(4)) >= 3.3;
+            },
+            fix: "Reset your Mailgun API key in Account Security > API Security and route outbound mail requests through your server."
+          },
+          {
+            id: "razorpay-secret",
+            name: "Razorpay Live Key Secret",
+            severity: "CRITICAL",
+            regex: /(?:razorpay[_-]?secret|rzp[_-]?secret|key[_-]?secret)\s*[:=]\s*["'`]([A-Za-z0-9]{24})["'`]/gi,
+            group: 1,
+            validate: function (m) {
+              return m.length === 24 && shannonEntropy(m) >= 3.6 && !isPlaceholder(m);
+            },
+            fix: "Regenerate your Razorpay API key pair in Razorpay Dashboard > Account & Settings > API Keys and verify payment signatures on your backend only."
+          },
+          {
+            id: "razorpay-key-id",
+            name: "Razorpay Live Key ID",
+            severity: "INFO",
+            regex: /\b(rzp_live_[A-Za-z0-9]{14})\b/g,
+            validate: function (m) {
+              return m.length === 23 && !isPlaceholder(m);
+            },
+            fix: "Razorpay Key IDs are public by design for Checkout.js. Ensure the accompanying key_secret is never present in frontend code."
+          },
+          {
+            id: "discord-bot-token",
+            name: "Discord Bot Token",
+            severity: "CRITICAL",
+            regex: /\b([MN][A-Za-z0-9_-]{23,25}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,38})\b/g,
+            validate: function (m) {
+              return shannonEntropy(m) >= 4.0;
+            },
+            fix: "Reset the bot token immediately in the Discord Developer Portal under Bot > Reset Token and run your bot process on a secure server."
+          },
+          {
+            id: "discord-webhook",
+            name: "Discord Webhook URL",
+            severity: "HIGH",
+            regex: /(https:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/api\/webhooks\/[0-9]{17,20}\/[A-Za-z0-9_-]{60,68})/g,
+            validate: function (m) {
+              return m.length >= 100;
+            },
+            fix: "Delete the webhook in Discord Channel Settings > Integrations > Webhooks and trigger webhook messages from a backend service."
+          },
+          {
+            id: "telegram-bot-token",
+            name: "Telegram Bot API Token",
+            severity: "CRITICAL",
+            regex: /\b([0-9]{8,10}:AA[A-Za-z0-9_-]{33})\b/g,
+            validate: function (m) {
+              var secretPart = m.split(":")[1];
+              return secretPart && secretPart.length === 35 && shannonEntropy(secretPart) >= 3.6;
+            },
+            fix: "Revoke the token via @BotFather (/revoke) on Telegram immediately and run Telegram Bot API requests from a backend server."
+          },
+          {
+            id: "private-key-pem",
+            name: "Private Cryptographic Key (PEM / OpenSSH)",
+            severity: "CRITICAL",
+            regex: /(-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----[\s\S]{30,}?-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----)/g,
+            validate: function (m) {
+              return m.length >= 100;
+            },
+            fix: "Revoke and replace the certificate or SSH key pair immediately. Never ship private keys in frontend assets or client bundles."
+          },
+          {
+            id: "database-uri",
+            name: "Database Connection URI with Credentials",
+            severity: "CRITICAL",
+            regex: /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|rediss):\/\/[^:\s"'`]+:[^@\s"'`]{4,}@[^\s"'`]+)/gi,
+            validate: function (m) {
+              return !isPlaceholder(m);
+            },
+            fix: "Rotate the database user password immediately, restrict database network ingress, and connect to databases strictly from backend servers."
+          },
+          {
+            id: "generic-secret-assignment",
+            name: "High-Entropy Secret / Password Assignment",
+            severity: "MEDIUM",
+            regex: /\b(?:api[_-]?secret|client[_-]?secret|app[_-]?secret|auth[_-]?secret|jwt[_-]?secret|secret[_-]?key|private[_-]?key|db[_-]?password|database[_-]?password|master[_-]?password|webhook[_-]?secret|signing[_-]?secret)\s*[:=]\s*["'`]([A-Za-z0-9+/=_-]{16,})["'`]/gi,
+            group: 1,
+            validate: function (m) {
+              return m.length >= 16 && shannonEntropy(m) >= 3.6 && !isPlaceholder(m);
+            },
+            fix: "Rotate this credential, remove it from frontend source or NEXT_PUBLIC_/VITE_ variables, and inject it only into server-side runtime environments."
+          }
+        ];
+
+        function getLineNumber(text, index) {
+          var line = 1;
+          for (var i = 0; i < index; i++) {
+            if (text.charCodeAt(i) === 10) line++;
+          }
+          return line;
+        }
+
+        function scanText(text, sourceName) {
+          if (!text || typeof text !== "string") return [];
+          var findings = [];
+          var seen = Object.create(null);
+
+          for (var r = 0; r < RULES.length; r++) {
+            var rule = RULES[r];
+            rule.regex.lastIndex = 0;
+            var match;
+            var guard = 0;
+            while ((match = rule.regex.exec(text)) !== null && guard < 5000) {
+              guard++;
+              var groupIdx = rule.group || 1;
+              var rawSecret = match[groupIdx] || match[0];
+              if (!rawSecret) continue;
+
+              if (rule.validate && !rule.validate(rawSecret)) {
+                continue;
+              }
+
+              var line = getLineNumber(text, match.index);
+              var dedupKey = rule.id + "|" + sourceName + "|" + line + "|" + rawSecret.slice(0, 12);
+              if (seen[dedupKey]) continue;
+              seen[dedupKey] = true;
+
+              var meta = rule.classify ? rule.classify(rawSecret) : null;
+              var entropy = shannonEntropy(rawSecret).toFixed(2);
+
+              findings.push({
+                id: rule.id,
+                type: meta && meta.name ? meta.name : rule.name,
+                severity: meta && meta.severity ? meta.severity : rule.severity,
+                masked: maskSecret(rawSecret),
+                source: sourceName || "pasted-code",
+                line: line,
+                entropy: entropy,
+                detail: meta && meta.detail ? meta.detail : "len=" + rawSecret.length,
+                fix: meta && meta.fix ? meta.fix : rule.fix
+              });
+            }
+          }
+
+          var order = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, INFO: 3 };
+          findings.sort(function (a, b) {
+            if (order[a.severity] !== order[b.severity]) {
+              return order[a.severity] - order[b.severity];
+            }
+            return a.line - b.line;
+          });
+
+          return findings;
+        }
+
+        return {
+          scanText: scanText,
+          maskSecret: maskSecret,
+          shannonEntropy: shannonEntropy
+        };
+      }
+
+      /* =========================================================================
+       * BOOKMARKLET GENERATOR (Built from the exact same scanner engine)
+       * ========================================================================= */
+      function buildBookmarkletCode() {
+        var bookmarkletRunner = function () {
+          var existing = document.getElementById("keyleak-shadow-host");
+          if (existing) {
+            existing.remove();
+            return;
+          }
+
+          var engine = (ENGINE_FACTORY)();
+          var host = document.createElement("div");
+          host.id = "keyleak-shadow-host";
+          host.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:auto;";
+          document.documentElement.appendChild(host);
+
+          var shadow = host.attachShadow({ mode: "open" });
+          var wrapper = document.createElement("div");
+          wrapper.innerHTML =
+            '<style>' +
+            ':host{all:initial;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}' +
+            '.backdrop{position:fixed;inset:0;background:rgba(1,4,9,0.78);display:flex;align-items:center;justify-content:center;padding:16px;}' +
+            '.modal{width:100%;max-width:780px;max-height:85vh;background:#0D1117;color:#E6EDF3;border:1px solid #30363D;border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,0.6);}' +
+            '.hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:#161B22;border-bottom:1px solid #30363D;}' +
+            '.title{font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;}' +
+            '.badge{font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(63,185,80,0.16);color:#3FB950;border:1px solid rgba(63,185,80,0.4);}' +
+            '.close{background:#21262D;color:#E6EDF3;border:1px solid #30363D;border-radius:8px;padding:5px 11px;font-size:13px;font-weight:600;cursor:pointer;}' +
+            '.close:hover{border-color:#F85149;color:#F85149;}' +
+            '.status{padding:10px 18px;font-size:12px;color:#8B949E;border-bottom:1px solid #30363D;background:#0D1117;}' +
+            '.body{padding:16px 18px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;}' +
+            '.card{background:#161B22;border:1px solid #30363D;border-left-width:4px;border-radius:10px;padding:12px 14px;}' +
+            '.CRITICAL{border-left-color:#F85149;}.HIGH{border-left-color:#F0883E;}.MEDIUM{border-left-color:#D29922;}.INFO{border-left-color:#15E0ED;}' +
+            '.row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;margin-bottom:6px;align-items:center;}' +
+            '.sev{font-family:monospace;font-size:11px;font-weight:700;padding:2px 6px;border-radius:5px;background:#21262D;}' +
+            '.CRITICAL .sev{color:#F85149;}.HIGH .sev{color:#F0883E;}.MEDIUM .sev{color:#D29922;}.INFO .sev{color:#15E0ED;}' +
+            '.type{font-weight:700;font-size:13px;margin-left:6px;}' +
+            '.src{font-family:monospace;font-size:11px;color:#8B949E;word-break:break-all;}' +
+            '.val{font-family:monospace;font-size:12px;background:#0D1117;border:1px solid #30363D;padding:4px 8px;border-radius:6px;display:inline-block;margin-bottom:6px;}' +
+            '.fix{font-size:12px;color:#C9D1D9;line-height:1.45;}' +
+            '.ok{text-align:center;padding:30px 12px;color:#3FB950;font-weight:600;font-size:14px;}' +
+            '</style>' +
+            '<div class="backdrop" part="backdrop">' +
+            '  <div class="modal" role="dialog" aria-modal="true" aria-label="KeyLeak Live Site Scan">' +
+            '    <div class="hdr">' +
+            '      <div class="title">KeyLeak Live Audit <span class="badge">Same-Origin Only</span></div>' +
+            '      <button class="close" id="kl-close" type="button">Close</button>' +
+            '    </div>' +
+            '    <div class="status" id="kl-status">Collecting inline scripts and same-origin bundles...</div>' +
+            '    <div class="body" id="kl-body"></div>' +
+            '  </div>' +
+            '</div>';
+
+          shadow.appendChild(wrapper);
+          shadow.getElementById("kl-close").addEventListener("click", function () {
+            host.remove();
+          });
+
+          function esc(s) {
+            return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+          }
+
+          (async function () {
+            var statusEl = shadow.getElementById("kl-status");
+            var bodyEl = shadow.getElementById("kl-body");
+            var allFindings = [];
+            var origin = window.location.origin;
+
+            var htmlFindings = engine.scanText(document.documentElement.outerHTML, window.location.pathname || "/index.html");
+            allFindings = allFindings.concat(htmlFindings);
+
+            var scripts = Array.prototype.slice.call(document.querySelectorAll("script"));
+            var urls = [];
+            var inlineCount = 0;
+
+            scripts.forEach(function (sc) {
+              if (sc.src) {
+                try {
+                  var u = new URL(sc.src, window.location.href);
+                  if (u.origin === origin && urls.indexOf(u.href) === -1) {
+                    urls.push(u.href);
+                  }
+                } catch (e) {}
+              } else if (sc.textContent && sc.textContent.trim()) {
+                inlineCount++;
+                var f = engine.scanText(sc.textContent, "inline-script-#" + inlineCount);
+                allFindings = allFindings.concat(f);
+              }
+            });
+
+            var fetched = 0;
+            for (var i = 0; i < urls.length; i++) {
+              var scriptUrl = urls[i];
+              statusEl.textContent = "Scanning same-origin script " + (i + 1) + " of " + urls.length + "...";
+              try {
+                var res = await fetch(scriptUrl, { credentials: "same-origin" });
+                if (res.ok) {
+                  var txt = await res.text();
+                  fetched++;
+                  var shortName = new URL(scriptUrl).pathname;
+                  allFindings = allFindings.concat(engine.scanText(txt, shortName));
+                }
+              } catch (e) {}
+            }
+
+            var dedup = [];
+            var seen = Object.create(null);
+            allFindings.forEach(function (item) {
+              var k = item.type + "|" + item.masked + "|" + item.source;
+              if (!seen[k]) {
+                seen[k] = true;
+                dedup.push(item);
+              }
+            });
+
+            statusEl.textContent =
+              "Scanned " + fetched + " same-origin bundle(s) and " + inlineCount + " inline script(s) on " +
+              window.location.hostname + " — " + dedup.length + " finding(s).";
+
+            if (dedup.length === 0) {
+              bodyEl.innerHTML = '<div class="ok">No exposed keys detected across scanned same-origin scripts.</div>';
+              return;
+            }
+
+            bodyEl.innerHTML = dedup.map(function (f) {
+              return (
+                '<div class="card ' + esc(f.severity) + '">' +
+                '  <div class="row">' +
+                '    <div><span class="sev">' + esc(f.severity) + '</span><span class="type">' + esc(f.type) + '</span></div>' +
+                '    <span class="src">' + esc(f.source) + ':' + esc(f.line) + '</span>' +
+                '  </div>' +
+                '  <div class="val">' + esc(f.masked) + '</div>' +
+                '  <div class="fix">' + esc(f.fix) + '</div>' +
+                '</div>'
+              );
+            }).join("");
+          })();
+        };
+
+        var code = "(" + bookmarkletRunner.toString().replace("(ENGINE_FACTORY)", "(" + createScannerEngine.toString() + ")") + ")();";
+        return "javascript:" + encodeURIComponent(code);
+      }
+
+      /* =========================================================================
+       * SAMPLE GENERATOR (Builds synthetic tokens at runtime via concatenation
+       * so static scanners never flag this source file)
+       * ========================================================================= */
+      function generateSampleCode() {
+        function randChars(len, alphabet) {
+          var out = "";
+          for (var i = 0; i < len; i++) {
+            out += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+          }
+          return out;
+        }
+        var alnum = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        var upperNum = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        var hex = "0123456789abcdef";
+
+        function fakeJwt(payloadObj) {
+          var header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" })).replace(/=/g, "");
+          var payload = btoa(JSON.stringify(payloadObj)).replace(/=/g, "");
+          var sig = randChars(43, alnum + "-_");
+          return header + "." + payload + "." + sig;
+        }
+
+        var awsId = "AK" + "IA" + randChars(16, upperNum);
+        var awsSecret = randChars(40, alnum + "+/");
+        var ghToken = "gh" + "p_" + randChars(36, alnum);
+        var stripeLive = "sk_" + "live_" + randChars(24, alnum);
+        var stripePub = "pk_" + "live_" + randChars(24, alnum);
+        var openAi = "sk-" + "proj-" + randChars(48, alnum);
+        var googleKey = "AI" + "za" + randChars(35, alnum + "-_");
+        var supaService = fakeJwt({ iss: "supabase", ref: "demoappxyz", role: "service_role", iat: 1730000000, exp: 2045000000 });
+        var supaAnon = fakeJwt({ iss: "supabase", ref: "demoappxyz", role: "anon", iat: 1730000000, exp: 2045000000 });
+        var rzpSecret = randChars(24, alnum);
+        var slackHook = "https://hooks.slack.com/services/T" + randChars(8, upperNum) + "/B" + randChars(8, upperNum) + "/" + randChars(24, alnum);
+        var dbUri = "postgres" + "ql://prod_admin:" + randChars(18, alnum) + "@db.internal.example.com:5432/payments";
+
+        return [
+          "// Compiled frontend bundle snippet (synthetic demo data)",
+          "window.__APP_CONFIG__ = {",
+          '  awsAccessKeyId: "' + awsId + '",',
+          '  aws_secret_access_key: "' + awsSecret + '",',
+          '  githubReleaseToken: "' + ghToken + '",',
+          '  stripePublishableKey: "' + stripePub + '",',
+          '  stripeSecretKey: "' + stripeLive + '",',
+          '  VITE_OPENAI_API_KEY: "' + openAi + '",',
+          '  firebaseConfig: {',
+          '    apiKey: "' + googleKey + '",',
+          '    authDomain: "acme-checkout.firebaseapp.com",',
+          '    projectId: "acme-checkout"',
+          "  },",
+          '  supabaseAnonKey: "' + supaAnon + '",',
+          '  supabaseServiceRoleKey: "' + supaService + '",',
+          '  razorpay_key_secret: "' + rzpSecret + '",',
+          '  deployAlertWebhook: "' + slackHook + '",',
+          '  DATABASE_URL: "' + dbUri + '"',
+          "};"
+        ].join("\n");
+      }
+
+      /* =========================================================================
+       * UI CONTROLLER
+       * ========================================================================= */
+      var engine = createScannerEngine();
+      var currentFindings = [];
+      var activeFilter = "ALL";
+      var loadedFiles = []; // { name, content }
+
+      var codeInput = document.getElementById("code-input");
+      var charCount = document.getElementById("char-count");
+      var fileInput = document.getElementById("file-input");
+      var dropzone = document.getElementById("dropzone");
+      var fileStatus = document.getElementById("file-status");
+      var findingsContainer = document.getElementById("findings-container");
+      var scanMeta = document.getElementById("scan-meta");
+      var btnExportJson = document.getElementById("btn-export-json");
+      var btnExportMd = document.getElementById("btn-export-md");
+      var bookmarkletLink = document.getElementById("bookmarklet-link");
+      var toastEl = document.getElementById("toast");
+
+      var bmHref = buildBookmarkletCode();
+      bookmarkletLink.setAttribute("href", bmHref);
+
+      function showToast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.add("show");
+        clearTimeout(showToast._t);
+        showToast._t = setTimeout(function () {
+          toastEl.classList.remove("show");
+        }, 2400);
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function updateCharCount() {
+        var total = codeInput.value.length;
+        for (var i = 0; i < loadedFiles.length; i++) {
+          total += loadedFiles[i].content.length;
+        }
+        charCount.textContent = total.toLocaleString() + " chars";
+      }
+
+      function renderFileChips() {
+        if (loadedFiles.length === 0) {
+          fileStatus.innerHTML = "<span>Supports drag &amp; drop of .js, .map, .html, .env, .json files (read locally via FileReader)</span>";
+          return;
+        }
+        fileStatus.innerHTML = loadedFiles.map(function (f, idx) {
+          return (
+            '<span class="file-chip">' +
+            escapeHtml(f.name) +
+            ' <button type="button" data-remove-file="' + idx + '" aria-label="Remove file ' + escapeHtml(f.name) + '" style="padding:0 4px;border:none;background:transparent;color:var(--muted);">&times;</button>' +
+            "</span>"
+          );
+        }).join("");
+      }
+
+      fileStatus.addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-remove-file]");
+        if (!btn) return;
+        var idx = parseInt(btn.getAttribute("data-remove-file"), 10);
+        loadedFiles.splice(idx, 1);
+        renderFileChips();
+        updateCharCount();
+        runScan();
+      });
+
+      function updateCounts() {
+        var counts = { ALL: currentFindings.length, CRITICAL: 0, HIGH: 0, MEDIUM: 0, INFO: 0 };
+        for (var i = 0; i < currentFindings.length; i++) {
+          var s = currentFindings[i].severity;
+          if (counts[s] !== undefined) counts[s]++;
+        }
+        Object.keys(counts).forEach(function (k) {
+          var el = document.getElementById("cnt-" + k);
+          if (el) el.textContent = String(counts[k]);
+        });
+      }
+
+      function renderFindings() {
+        updateCounts();
+        var hasFindings = currentFindings.length > 0;
+        btnExportJson.disabled = !hasFindings;
+        btnExportMd.disabled = !hasFindings;
+
+        var filtered = activeFilter === "ALL"
+          ? currentFindings
+          : currentFindings.filter(function (f) { return f.severity === activeFilter; });
+
+        if (filtered.length === 0) {
+          findingsContainer.innerHTML =
+            '<div class="empty-state">' +
+            "<strong>" + (hasFindings ? "No findings match the " + escapeHtml(activeFilter) + " filter" : "No exposed keys detected") + "</strong>" +
+            (hasFindings ? "Select another severity filter above to view all findings." : "Your scanned input did not trigger any secret patterns.") +
+            "</div>";
+          return;
+        }
+
+        findingsContainer.innerHTML =
+          '<div class="findings-list">' +
+          filtered.map(function (f) {
+            return (
+              '<article class="finding-item sev-' + escapeHtml(f.severity) + '">' +
+              '  <div class="finding-top">' +
+              '    <div class="finding-title-group">' +
+              '      <span class="sev-tag">' + escapeHtml(f.severity) + "</span>" +
+              '      <span class="finding-type">' + escapeHtml(f.type) + "</span>" +
+              "    </div>" +
+              '    <span class="finding-loc">' + escapeHtml(f.source) + " : line " + escapeHtml(f.line) + "</span>" +
+              "  </div>" +
+              '  <div class="masked-row">' +
+              '    <code class="masked-code" aria-label="Masked secret value">' + escapeHtml(f.masked) + "</code>" +
+              '    <span class="meta-tag">entropy: ' + escapeHtml(f.entropy) + "</span>" +
+              '    <span class="meta-tag">' + escapeHtml(f.detail) + "</span>" +
+              "  </div>" +
+              '  <div class="finding-fix"><strong>Remediation:</strong> ' + escapeHtml(f.fix) + "</div>" +
+              "</article>"
+            );
+          }).join("") +
+          "</div>";
+      }
+
+      function runScan() {
+        var t0 = performance.now();
+        var results = [];
+
+        if (codeInput.value.trim()) {
+          results = results.concat(engine.scanText(codeInput.value, "editor-input"));
+        }
+        for (var i = 0; i < loadedFiles.length; i++) {
+          results = results.concat(engine.scanText(loadedFiles[i].content, loadedFiles[i].name));
+        }
+
+        var order = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, INFO: 3 };
+        results.sort(function (a, b) {
+          if (order[a.severity] !== order[b.severity]) return order[a.severity] - order[b.severity];
+          return a.line - b.line;
+        });
+
+        currentFindings = results;
+        var elapsed = Math.max(1, Math.round(performance.now() - t0));
+        scanMeta.textContent = "Found " + results.length + " item(s) in " + elapsed + " ms";
+        renderFindings();
+      }
+
+      function handleFiles(fileList) {
+        var files = Array.prototype.slice.call(fileList || []);
+        if (files.length === 0) return;
+        var pending = files.length;
+
+        files.forEach(function (file) {
+          var reader = new FileReader();
+          reader.onload = function (ev) {
+            var content = String(ev.target.result || "");
+            var existingIdx = loadedFiles.findIndex(function (f) { return f.name === file.name; });
+            if (existingIdx !== -1) {
+              loadedFiles[existingIdx].content = content;
+            } else {
+              loadedFiles.push({ name: file.name, content: content });
+            }
+            pending--;
+            if (pending === 0) {
+              renderFileChips();
+              updateCharCount();
+              runScan();
+              showToast("Loaded " + files.length + " local file(s)");
+            }
+          };
+          reader.onerror = function () {
+            pending--;
+            showToast("Failed to read " + file.name);
+          };
+          reader.readAsText(file);
+        });
+      }
+
+      function downloadFile(filename, content, mime) {
+        var blob = new Blob([content], { type: mime });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      }
+
+      // Event Listeners
+      codeInput.addEventListener("input", updateCharCount);
+
+      document.getElementById("btn-scan").addEventListener("click", function () {
+        runScan();
+        showToast("Scan complete");
+      });
+
+      document.getElementById("btn-sample").addEventListener("click", function () {
+        codeInput.value = generateSampleCode();
+        updateCharCount();
+        runScan();
+        showToast("Loaded synthetic sample bundle");
+      });
+
+      document.getElementById("btn-upload").addEventListener("click", function () {
+        fileInput.click();
+      });
+
+      fileInput.addEventListener("change", function (e) {
+        handleFiles(e.target.files);
+        fileInput.value = "";
+      });
+
+      document.getElementById("btn-clear").addEventListener("click", function () {
+        codeInput.value = "";
+        loadedFiles = [];
+        currentFindings = [];
+        activeFilter = "ALL";
+        document.querySelectorAll(".filter-btn").forEach(function (b) {
+          b.classList.toggle("active", b.getAttribute("data-filter") === "ALL");
+        });
+        renderFileChips();
+        updateCharCount();
+        updateCounts();
+        btnExportJson.disabled = true;
+        btnExportMd.disabled = true;
+        scanMeta.textContent = "Ready to scan";
+        findingsContainer.innerHTML =
+          '<div class="empty-state">' +
+          "<strong>No scan run yet</strong>" +
+          'Paste code above, drop build files, or click "Try a sample" to test 24+ secret detectors.' +
+          "</div>";
+      });
+
+      // Drag and drop support
+      ["dragenter", "dragover"].forEach(function (evtName) {
+        dropzone.addEventListener(evtName, function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dropzone.classList.add("dragover");
+        });
+      });
+
+      ["dragleave", "drop"].forEach(function (evtName) {
+        dropzone.addEventListener(evtName, function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dropzone.classList.remove("dragover");
+        });
+      });
+
+      dropzone.addEventListener("drop", function (e) {
+        if (e.dataTransfer && e.dataTransfer.files) {
+          handleFiles(e.dataTransfer.files);
+        }
+      });
+
+      // Severity filters
+      document.querySelectorAll(".filter-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          activeFilter = btn.getAttribute("data-filter");
+          document.querySelectorAll(".filter-btn").forEach(function (b) {
+            b.classList.toggle("active", b === btn);
+          });
+          renderFindings();
+        });
+      });
+
+      // Bookmarklet click guard & copy
+      bookmarkletLink.addEventListener("click", function (e) {
+        e.preventDefault();
+        showToast("Drag this button to your bookmarks bar to use on your own site");
+      });
+
+      document.getElementById("btn-copy-bm").addEventListener("click", function () {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(bmHref).then(function () {
+            showToast("Bookmarklet URI copied to clipboard");
+          });
+        } else {
+          showToast("Drag the bookmarklet button to your bookmarks bar");
+        }
+      });
+
+      // Export JSON
+      btnExportJson.addEventListener("click", function () {
+        var report = {
+          tool: "KeyLeak",
+          repository: "https://github.com/shrijeetdev/keyleak",
+          generatedAt: new Date().toISOString(),
+          totalFindings: currentFindings.length,
+          findings: currentFindings.map(function (f) {
+            return {
+              type: f.type,
+              severity: f.severity,
+              maskedValue: f.masked,
+              source: f.source,
+              line: f.line,
+              entropy: Number(f.entropy),
+              remediation: f.fix
+            };
+          })
+        };
+        downloadFile("keyleak-report.json", JSON.stringify(report, null, 2), "application/json");
+      });
+
+      // Export Markdown
+      btnExportMd.addEventListener("click", function () {
+        var lines = [
+          "# KeyLeak Security Scan Report",
+          "",
+          "- Generated: " + new Date().toISOString(),
+          "- Total findings: " + currentFindings.length,
+          "- Tool: https://shrijeetdev.github.io/keyleak/",
+          "",
+          "| Severity | Type | Masked Value | Source | Line | Remediation |",
+          "| --- | --- | --- | --- | --- | --- |"
+        ];
+        currentFindings.forEach(function (f) {
+          lines.push(
+            "| " + f.severity +
+            " | " + f.type.replace(/\|/g, "\\|") +
+            " | `" + f.masked.replace(/`/g, "") + "`" +
+            " | `" + f.source.replace(/`/g, "") + "`" +
+            " | " + f.line +
+            " | " + f.fix.replace(/\|/g, "\\|") + " |"
+          );
+        });
+        downloadFile("keyleak-report.md", lines.join("\n"), "text/markdown");
+      });
+    })();
+  </script>
+</body>
+</html>
